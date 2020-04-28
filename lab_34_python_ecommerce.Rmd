@@ -1,0 +1,143 @@
+---
+title: "Visualizing HR Employee Clusters"
+subtitle: "Using R + Python"
+author: "Business Science"
+date: "4/15/2020"
+output: 
+   html_document:
+       theme: flatly
+       toc: true
+       toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,
+    message = FALSE,
+    warning = FALSE
+)
+```
+
+
+# Prerequisites (Conda py3.8 Environment)
+
+Follow the article, [_"How to Run Python's Scikit-Learn in R in 5 minutes"_](https://www.business-science.io/learn-r/2020/04/20/setup-python-in-r-with-rmarkdown.html)
+
+- Install the Anaconda Distribution
+
+- Get Python Scikit Learn Setup in R
+
+- Make "py3.8" conda environment with `scikit-learn`, `numpy`, `pandas` and `matplotlib`.
+
+# Setup R's Python interface
+
+```{r}
+library(reticulate)
+
+# Replace this with your conda environment containing sklearn, pandas, & numpy
+use_condaenv("py3.8", required = TRUE)
+```
+
+# Data
+
+```{r}
+ecommerce_raw_tbl <- read_csv("data/ecommerce_data.csv")
+ecommerce_raw_tbl
+```
+
+# Data Wrangling and Preprocessing (R)
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(timetk)
+```
+
+
+```{r}
+ecommerce_tbl <- ecommerce_raw_tbl %>%
+    mutate(InvoiceDate = mdy_hms(InvoiceDate)) %>%
+    select(contains("ID"), contains("Invoice"), everything()) %>%
+    mutate(CustomerID = as.character(CustomerID)) %>%
+    mutate(PriceExt = Quantity * UnitPrice)
+
+ecommerce_tbl
+```
+
+
+```{r}
+ecommerce_tbl %>%
+    summarise_by_time(InvoiceDate, .by = "day", revenue = sum(PriceExt)) %>%
+    plot_time_series(InvoiceDate, revenue, .smooth_period = "3 months")
+```
+
+```{r}
+ecommerce_tbl %>% glimpse()
+```
+
+# Text Features
+
+```{r}
+library(tidytext)
+```
+
+
+```{r}
+stock_code_dictionary_raw_tbl <- ecommerce_tbl %>%
+    distinct(StockCode, Description) %>%
+    unnest_tokens(terms, Description) %>%
+    count(StockCode, terms) %>%
+    drop_na() 
+
+stock_code_dictionary_raw_tbl
+```
+
+```{r}
+term_frequency_tbl <- stock_code_dictionary_raw_tbl %>%
+    group_by(terms) %>%
+    summarize(n = sum(n)) %>%
+    ungroup() %>%
+    arrange(desc(n)) 
+
+term_frequency_tbl
+```
+
+# Visualizations
+
+## Plotly
+
+```{r, fig.height=8}
+g <- term_frequency_tbl %>%
+    slice(1:40) %>%
+    mutate(terms = as_factor(terms) %>% fct_rev()) %>%
+    ggplot(aes(n, terms)) +
+    geom_point() +
+    expand_limits(x = 0)
+
+ggplotly(g)
+```
+
+## Wordcloud
+
+```{r}
+term_frequency_tbl %>%
+    slice(1:100) %>%
+    mutate(terms = as_factor(terms) %>% fct_rev()) %>%
+    ggplot() +
+    geom_text_wordcloud_area(aes(label = terms, size = n, color = n)) +
+    scale_size_area(max_size = 14) +
+    scale_color_viridis_c(direction = -1) +
+    theme(plot.background  = element_rect(fill = "black"), 
+          panel.background = element_rect(fill = "black"))
+```
+
+
+
+
+```{r}
+%>%
+    pivot_wider(names_from = terms, values_from = n, values_fill = list(n = 0))
+
+stock_code_dictionary_tbl
+```
+
