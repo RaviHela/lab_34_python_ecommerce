@@ -18,18 +18,36 @@ knitr::opts_chunk$set(
 )
 ```
 
+# Libraries
 
-# Prerequisites (Conda py3.8 Environment)
+```{r}
+# Time Series
+library(lubridate)
+library(timetk)
+
+# Text
+library(tidytext)
+
+# Visualization
+library(plotly)
+library(ggwordcloud)
+
+# Core
+library(tidyverse)
+library(tidyquant)
+```
+
+# Setup R's Python interface (Conda py3.8 Environment)
+
+## Preparation 
 
 Follow the article, [_"How to Run Python's Scikit-Learn in R in 5 minutes"_](https://www.business-science.io/learn-r/2020/04/20/setup-python-in-r-with-rmarkdown.html)
 
 - Install the Anaconda Distribution
-
 - Get Python Scikit Learn Setup in R
-
 - Make "py3.8" conda environment with `scikit-learn`, `numpy`, `pandas` and `matplotlib`.
 
-# Setup R's Python interface
+## Reticulate Setup
 
 ```{r}
 library(reticulate)
@@ -38,6 +56,9 @@ library(reticulate)
 use_condaenv("py3.8", required = TRUE)
 ```
 
+
+
+
 # Data
 
 ```{r}
@@ -45,42 +66,63 @@ ecommerce_raw_tbl <- read_csv("data/ecommerce_data.csv")
 ecommerce_raw_tbl
 ```
 
-# Data Wrangling and Preprocessing (R)
+# Data Wrangling (R)
 
-```{r}
-library(tidyverse)
-library(lubridate)
-library(timetk)
-```
-
+## Clean Up the Data
 
 ```{r}
 ecommerce_tbl <- ecommerce_raw_tbl %>%
     mutate(InvoiceDate = mdy_hms(InvoiceDate)) %>%
     select(contains("ID"), contains("Invoice"), everything()) %>%
     mutate(CustomerID = as.character(CustomerID)) %>%
+    filter(UnitPrice > 0) %>%
     mutate(PriceExt = Quantity * UnitPrice)
 
-ecommerce_tbl
-```
-
-
-```{r}
-ecommerce_tbl %>%
-    summarise_by_time(InvoiceDate, .by = "day", revenue = sum(PriceExt)) %>%
-    plot_time_series(InvoiceDate, revenue, .smooth_period = "3 months")
-```
-
-```{r}
 ecommerce_tbl %>% glimpse()
 ```
 
-# Text Features
+## Visualization
 
 ```{r}
-library(tidytext)
+summarize_by <- "week"
+
+ecommerce_tbl %>%
+    summarise_by_time(InvoiceDate, .by = summarize_by, revenue = sum(PriceExt)) %>%
+    plot_time_series(InvoiceDate, revenue, .smooth_period = "3 months")
 ```
 
+## Price Feature Engineering
+
+```{r}
+stock_code_prices_tbl <- ecommerce_tbl %>%
+    select(StockCode, UnitPrice) %>%
+    distinct()
+
+stock_code_prices_tbl
+```
+
+
+```{r}
+stock_code_prices_tbl %>%
+    ggplot(aes(log(UnitPrice))) +
+    geom_histogram()
+```
+
+```{r}
+stock_code_prices_tbl <- stock_code_prices_tbl %>%
+    mutate(prices_binned = cut_number(UnitPrice, n = 6))
+
+stock_code_prices_tbl
+```
+```{r}
+stock_code_prices_tbl %>%
+    count(prices_binned)
+```
+
+
+## Text Feature Engineering
+
+### Create a Dictionary
 
 ```{r}
 stock_code_dictionary_raw_tbl <- ecommerce_tbl %>%
@@ -91,20 +133,29 @@ stock_code_dictionary_raw_tbl <- ecommerce_tbl %>%
 
 stock_code_dictionary_raw_tbl
 ```
+### Term Frequency
+
+- Count Frequency
+- Remove stop words (e.g. "of" has no meaning)
+- Remove colors (e.g. "pink" has no meaning)
+- Remove terms with numbers (e.g. "130.5cm" has no meaning)
 
 ```{r}
 term_frequency_tbl <- stock_code_dictionary_raw_tbl %>%
     group_by(terms) %>%
     summarize(n = sum(n)) %>%
     ungroup() %>%
+    anti_join(stop_words, by = c("terms" = "word")) %>%
+    filter(!terms %in% colors()) %>%
+    filter(!terms %>% str_detect(pattern = "[0-9]")) %>%
     arrange(desc(n)) 
 
 term_frequency_tbl
 ```
 
-# Visualizations
+### Visualizations
 
-## Plotly
+#### Plotly
 
 ```{r, fig.height=8}
 g <- term_frequency_tbl %>%
@@ -117,7 +168,7 @@ g <- term_frequency_tbl %>%
 ggplotly(g)
 ```
 
-## Wordcloud
+#### Wordcloud
 
 ```{r}
 term_frequency_tbl %>%
@@ -131,13 +182,236 @@ term_frequency_tbl %>%
           panel.background = element_rect(fill = "black"))
 ```
 
+### Text Features
+
+
+```{r}
+top_100_terms <- term_frequency_tbl %>% slice(1:100) %>% pull(terms)
+
+stock_code_text_features_tbl <- stock_code_dictionary_raw_tbl %>%
+    filter(terms %in% top_100_terms) %>%
+    pivot_wider(names_from = terms, values_from = n, values_fill = list(n = 0))
+
+stock_code_text_features_tbl
+```
+
+## Join Data
+
+```{r}
+stock_categorization_tbl <- stock_code_prices_tbl %>%
+    left_join(stock_code_text_features_tbl) %>%
+    select(-UnitPrice) %>%
+    drop_na()
+
+stock_categorization_tbl
+```
+
+```{r, paged.print = FALSE}
+library(recipes)
+
+recipe_spec_stock_cat <- recipe(~ ., data = stock_categorization_tbl) %>%
+    step_rm(StockCode) %>%
+    step_dummy(prices_binned, one_hot = TRUE) %>% 
+    prep()
+
+recipe_spec_stock_cat
+```
+
+```{r}
+X <- recipe_spec_stock_cat %>% juice() %>% as.matrix()
+stock_code <- stock_categorization_tbl %>% pull(StockCode)
+
+rownames(X) <- stock_code
+
+X[1:10, 1:10]
+```
+
+
+
+# Product Categorization (Python)
+
+## t-SNE
+
+
+
+```{python}
+from sklearn.manifold import TSNE
+```
+
+```{python}
+X_embedded = TSNE(n_components=2, random_state=123).fit_transform(r.X)
+
+pd.DataFrame(X_embedded)
+```
+
+## K-Means Cluster Assignments
+
+```{python}
+from sklearn.cluster import KMeans
+```
+
+```{python}
+km = KMeans(n_clusters = 6, random_state=123).fit(r.X)
+```
+
+```{python}
+cluster_assignments_km = km.labels_
+```
+
+```{python}
+pd.Series(cluster_assignments_km).unique()
+```
+
+
+
+## Visualization
+
+```{r}
+product_clusters_tbl <- py$X_embedded %>%
+    as_tibble() %>%
+    mutate(cluster = as.factor(py$cluster_assignments_km)) %>%
+    mutate(StockCode = stock_code) %>%
+    left_join(
+        ecommerce_tbl %>% select(StockCode, Description) %>% distinct()
+    ) %>%
+    select(StockCode, Description, everything())
+
+product_clusters_tbl
+```
+
+### Product Cluster Map
+
+```{r}
+product_clusters_tbl %>%
+    ggplot(aes(V1, V2, color = cluster)) +
+    geom_point(alpha = 0.7) +
+    scale_color_tq() +
+    theme_tq()
+
+```
+
+
+### Word Cloud 2
+
+```{r}
+term_freq_by_cluster_tbl <- stock_code_dictionary_raw_tbl %>%
+    left_join(product_clusters_tbl %>% select(StockCode, cluster)) %>%
+    filter(!is.na(cluster)) %>%
+    
+    # Remove stop words
+    anti_join(stop_words, by = c("terms" = "word")) %>%
+    filter(!terms %in% colors()) %>%
+    filter(!terms %>% str_detect(pattern = "[0-9]")) %>%
+    filter(!terms %>% str_detect("(set)|(heart)")) %>%
+    
+    # Group by cluster
+    group_by(cluster, terms) %>%
+    summarise(n = sum(n)) %>%
+    ungroup() %>%
+    arrange(desc(n)) %>%
+    
+    # Remove terms that 
+    
+    slice(1:100)
+
+
+```
 
 
 
 ```{r}
-%>%
-    pivot_wider(names_from = terms, values_from = n, values_fill = list(n = 0))
-
-stock_code_dictionary_tbl
+term_freq_by_cluster_tbl %>%
+    ggplot() +
+    geom_text_wordcloud_area(aes(label = terms, size = n, color = cluster)) +
+    scale_size_area(max_size = 5) +
+    scale_color_viridis_d(direction = -1) +
+    facet_wrap(~ cluster, ncol = 2) +
+    theme_minimal() +
+    theme(plot.background  = element_rect(fill = "black"), 
+          panel.background = element_rect(fill = "black")) 
 ```
+
+
+
+
+
+
+
+
+# OLD
+
+# Customer Segmentation (Python)
+
+
+```{r}
+ecommerce_joined_tbl <- ecommerce_tbl %>%
+    stock_code_prices_tbl %>%
+    left_join(stock_code_text_features_tbl) 
+
+ecommerce_joined_tbl
+```
+
+
+# Train / Test (R)
+
+## Sample by Customer
+
+```{r}
+set.seed(123)
+customer_id_train_tbl <- ecommerce_joined_tbl %>%
+    distinct(CustomerID) %>%
+    sample_frac(size = 0.80) # Note that slice_
+
+# Left Join
+training_raw_tbl <- customer_id_train_tbl %>%
+    left_join(ecommerce_joined_tbl)
+
+# Anti Join (Filtering Join)
+testing_raw_tbl <- ecommerce_joined_tbl %>%
+    anti_join(customer_id_train_tbl)
+```
+
+```{r}
+training_raw_tbl
+```
+
+```{r}
+testing_raw_tbl
+```
+
+## Prep for Clustering
+
+```{r}
+customer_product_tbl <- training_raw_tbl %>%
+    select(CustomerID, StockCode, Quantity) %>%
+    group_by(CustomerID) %>%
+    mutate(prop = Quantity / sum(Quantity)) %>%
+    ungroup() %>%
+    mutate(prop = ifelse(prop < 0, 0, prop)) %>%
+    mutate(prop = ifelse(prop > 1, 1, prop)) %>%
+    select(-Quantity) %>%
+    pivot_wider(
+        names_from   = StockCode, 
+        values_from  = prop, 
+        values_fn    = list(prop = sum),
+        values_fill  = list(prop = 0)
+    )
+
+customer_product_tbl
+```
+
+```{r}
+X <- customer_product_tbl %>% select(-CustomerID) %>% as.matrix()
+customer_ids <- customer_product_tbl %>% pull(CustomerID)
+stock_codes  <- names(customer_product_tbl) 
+
+rownames(X) <- customer_ids
+colnames(X) <- stock_codes[2:length(stock_codes)]
+
+X[1:10, 1:10]
+```
+
+
+
+
 
