@@ -1,11 +1,16 @@
-# LEARNING LAB 33: HR EMPLOYEE CLUSTERING WITH PYTHON
-# BONUS #1 - EMPLOYEE ATTRITION EXPLORER
+# LEARNING LAB 34: ADVANCED CUSTOMER SEGMENTATION WITH PYTHON
+# BONUS #1 - MARKET BASKET ANALYZER
 
 # LIBRARIES ----
 library(shiny)
 library(shinythemes)
-library(DT)
 
+# Tables
+library(DT)
+library(knitr)
+library(kableExtra)
+
+# Core
 library(tidyverse)
 library(tidyquant)
 
@@ -42,6 +47,29 @@ cluster_morphology_tbl <- read_rds("preprocessing/cluster_morphology_tbl.rds")
 
 cluster_morphology_ggplot <- read_rds("preprocessing/cluster_morphology_ggplot.rds")
 
+# INFO CARD ----
+info_card <- function(title, value, sub_value = NULL,
+                      main_icon = "chart-line", sub_icon = "arrow-up",
+                      bg_color = "default", text_color = "default", 
+                      sub_text_color = "success") {
+    
+    div(
+        class = "panel panel-default",
+        style = "padding: 0px;",
+        div(
+            class = str_glue("panel-body bg-{bg_color} text-{text_color}"),
+            p(class = "pull-right", icon(class = "fa-4x", main_icon)),
+            h4(title),
+            h5(value),
+            p(
+                class = str_glue("text-{sub_text_color}"),
+                icon(sub_icon),
+                tags$small(sub_value)
+            )
+        )
+    )
+    
+}
 
 # UI ----
 ui <- navbarPage(
@@ -52,11 +80,15 @@ ui <- navbarPage(
     theme       = shinytheme("paper"),
     
     tabPanel(
-        title = "Select",
+        title = "Market Basket Analyzer",
         sidebarLayout(
             sidebarPanel = sidebarPanel(
                 width = 3,
-                h3("Market Basket"),
+                h3("Market Basket Analyzer"),
+                HTML("<p>Product recommendations are a key component of maximizing revenue.
+                  Select an invoice, and perform <strong>Market Basket Analysis</strong> and 
+                     recommendation using <code>Python Scikit Learn</code>.</p>"),
+                hr(),
                 shiny::selectInput(
                     inputId  = "invoice_selection", 
                     label    = "Analyze an Invoice",
@@ -66,11 +98,16 @@ ui <- navbarPage(
                 ),
                 shiny::actionButton(inputId = "submit", "Submit", class = "btn-primary"),
                 hr(),
-                uiOutput("text")
+                # uiOutput("text"),
+                br(),
+                h5("Customer Order"),
+                htmlOutput("basket_small")
                 
             ),
             mainPanel = mainPanel(
                 width = 9,
+                # * VALUE BOXES ----
+                uiOutput("value_boxes"),
                 div(
                     class = "row",
                     div(
@@ -85,23 +122,28 @@ ui <- navbarPage(
                 ),
                 div(
                     class = "row",
-                    div(
-                        class = "col-sm-12 panel",
-                        div(class = "panel-heading", h5("Recommended Products")),
-                        div(
-                            class = "panel-body",
-                            dataTableOutput("recommendation")
-                        )
-                    )
-                ),
-                div(
-                    class = "row",
-                    div(
-                        class = "col-sm-12 panel",
-                        div(class = "panel-heading", h5("Customer's Basket")),
-                        div(
-                            class = "panel-body",
-                            dataTableOutput("basket"),
+                    tabsetPanel(
+                        tabPanel(
+                            title = "Recommended Products",
+                            div(
+                                class = "col-sm-12 panel",
+                                div(class = "panel-heading", h5("Recommended Products")),
+                                div(
+                                    class = "panel-body",
+                                    dataTableOutput("recommendation")
+                                )
+                            )
+                        ),
+                        tabPanel(
+                            title = "Full Customer Basket",
+                            div(
+                                class = "col-sm-12 panel",
+                                div(class = "panel-heading", h5("Full Customer Market Basket (Invoice)")),
+                                div(
+                                    class = "panel-body",
+                                    dataTableOutput("basket")
+                                )
+                            )
                         )
                     )
                 )
@@ -114,6 +156,7 @@ ui <- navbarPage(
 server <- function(session, input, output) {
     rv <- reactiveValues()
     
+    # DATA PREPARAION ----
     observeEvent(input$submit, {
         
         rv$invoice_tbl <- ecommerce_raw_tbl %>%
@@ -169,12 +212,10 @@ server <- function(session, input, output) {
         rv$data_prep <- bake(recipe_spec, new_data = rv$data_bind) %>%
             select(count, mean, cat_2, cat_0, cat_1, cat_3, cat_NA, cat_4)
         
-        
         # Make prediction
         rv$prediction <- lr_predict(as.matrix(rv$data_prep)) %>% as.character()
         
         # Product Recommendation
-        
         product_cat <- cluster_morphology_tbl %>%
             mutate(cluster = as.character(cluster) %>% as.numeric()) %>%
             filter(cluster == rv$prediction) %>%
@@ -206,7 +247,7 @@ server <- function(session, input, output) {
         
     }, ignoreNULL = FALSE)
     
-    # Debugging
+    # Debugging ----
     output$print <- renderPrint({
         list(
             invoice_tbl    = rv$invoice_tbl,
@@ -216,25 +257,98 @@ server <- function(session, input, output) {
         )
     })
     
-    output$basket <- renderDataTable({
-        rv$invoice_tbl %>%
-            rename(`Product Category` = cluster) %>%
-            select(-InvoiceNo) %>%
-            datatable()
-    })
-    
-    output$recommendation <- renderDataTable({
-        rv$recommendation_tbl %>%
-            datatable()
-    })
-    
-    output$text <- renderUI({
-        div(
-            h5("Customer Segment Prediction: ", span(rv$prediction, class="label label-primary"))
+    # VALUEBOX OUTPUT ----
+    output$value_boxes <- renderUI({
+        
+        order_count   <- rv$count
+        invoice_value <- rv$invoice_tbl %>% pull(PriceExt) %>% SUM()
+        prediction    <- rv$prediction
+        
+        tagList(
+            column(
+                width = 4,
+                info_card(
+                    title = HTML("<span style='color:white;'>Order History</span>"), 
+                    value = HTML(str_glue("<span class='label label-info'>{order_count}</span>")), 
+                    sub_value = ifelse(order_count > 4, "Above Average", "Below Average"), 
+                    sub_icon  = ifelse(order_count > 4, "arrow-up", "arrow-down"),
+                    bg_color  = "primary", 
+                    sub_text_color = ifelse(order_count > 4, "default", "danger"), 
+                    main_icon = "credit-card"
+                )
+            ),
+            column(
+                width = 4,
+                info_card(
+                    title = HTML("<span style='color:white;'>Invoice Value</span>"), 
+                    value = HTML(str_glue("<span class='label label-info'>{scales::dollar(invoice_value)}</span>")), 
+                    sub_value = ifelse(invoice_value > 250, "Above Average", "Below Average"), 
+                    sub_icon  = ifelse(invoice_value > 250, "arrow-up", "arrow-down"),
+                    bg_color  = ifelse(invoice_value > 250, "primary", "danger"), 
+                    sub_text_color = ifelse(invoice_value > 250, "default", "danger"),
+                    main_icon = "money-bill-wave"
+                )
+            ),
+            column(
+                width = 4,
+                info_card(
+                    title = HTML("<span style='color:white;'>Customer Segment</span>"), 
+                    value = HTML(str_glue("<span class='label label-info'>{prediction}</span>")), 
+                    sub_value = case_when(
+                        prediction == "0" ~ "Big Spender! Offer discounts for bulk.",
+                        prediction == "1" ~ "Promote Product Categories 1 & 2",
+                        prediction == "2" ~ "Difficult to Classify",
+                        prediction == "3" ~ "Promote Product Categories 0 & 2",
+                        prediction == "4" ~ "Promote Product Category 2",
+                        prediction == "5" ~ "Promote Product Categories: 1, 3, 4"
+                    ), 
+                    sub_icon  = NULL,
+                    bg_color  = "primary", 
+                    sub_text_color = "default",
+                    main_icon = "users"
+                )
+            )
         )
     })
     
-    # GGPLOT ----
+    # KNITR TABLE OUTPUT ----
+    output$basket_small <- renderText({
+        rv$invoice_tbl %>%
+            rename(`Product Category` = cluster) %>%
+            select(StockCode, Description) %>%
+            kable() %>%
+            kable_styling(
+                font_size = 10,
+                bootstrap_options = c("striped", "hover", "condensed")
+            )
+    })
+    
+    # DATA TABLE FULL INVOICE ----
+    output$basket <- renderDataTable({
+        rv$invoice_tbl %>%
+            rename(`ProductCategory` = cluster) %>%
+            select(InvoiceDate, StockCode, ProductCategory, Description, 
+                   CustomerID, Country, Quantity, UnitPrice, PriceExt) %>%
+            datatable(options = list(dom = "t")) %>%
+            formatCurrency(columns = c("UnitPrice", "PriceExt"))
+    })
+    
+    # DATA TABLE RECOMMENDATION ----
+    output$recommendation <- renderDataTable({
+        rv$recommendation_tbl %>%
+            set_names(c("Stock Code", "Description", "Unit Price (Median)", "Product Category")) %>%
+            datatable(options = list(dom = "t")) %>%
+            formatCurrency(columns = "Unit Price (Median)")
+    })
+    
+    # # TEXT PREDICTION ----
+    # output$text <- renderUI({
+    #     div(
+    #         h5("Customer Segment Prediction: ", span(rv$prediction, class="label label-warning"))
+    #     )
+    # })
+    
+    # GGPLOT SEGMENT MORPHOLOGY ----
     output$ggplot <- renderPlot({
         cluster_morphology_ggplot +
             facet_wrap(~ cluster, nrow = 1) +
