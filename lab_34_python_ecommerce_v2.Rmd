@@ -52,11 +52,12 @@ Follow the article, [_"How to Run Python's Scikit-Learn in R in 5 minutes"_](htt
 
 ```{r}
 library(reticulate)
+```
 
+```{r}
 # Replace this with your conda environment containing sklearn, pandas, & numpy
 use_condaenv("py3.8", required = TRUE)
 ```
-
 
 
 
@@ -353,6 +354,7 @@ import pandas as pd
 ```
 
 
+
 ## t-SNE
 
 ```{python}
@@ -393,7 +395,7 @@ from sklearn.cluster import KMeans
 ```
 
 ```{python}
-km = KMeans(n_clusters = 6, random_state=123).fit(r.X)
+km = KMeans(n_clusters = 5, random_state=123).fit(r.X)
 ```
 
 ```{python}
@@ -505,7 +507,7 @@ term_freq_by_cluster_tbl %>%
 ```
 
 
-# Part 3 - Customer Segmentation
+# Part 3 - Customer Segmentation (R)
 
 
 ## Feature Engineering  
@@ -710,4 +712,122 @@ cluster_morphology_tbl %>%
     ) 
 ```
 
-# Part 5 - Customer Modeling
+## Prepare for Machine Learning
+
+```{r, paged.print = FALSE}
+recipe_spec_customer_prediction <- recipe(cluster ~ ., customer_clusters_tbl) %>%
+    step_rm(CustomerID, V1, V2, count, min, max, sum, FirstPurchase, LastPurchase) %>%
+    # step_log(median) %>%
+    step_range(median) %>%
+    step_mutate(cluster = as.integer(as.character(cluster))) %>%
+    prep()
+
+recipe_spec_customer_prediction %>% juice()
+```
+
+```{r}
+X <- recipe_spec_customer_prediction %>% 
+    juice() %>% 
+    select(-cluster) %>% 
+    as.matrix()
+
+Y <- recipe_spec_customer_prediction %>% 
+    juice() %>%
+    pull(cluster)
+
+X[1:10, ]
+
+Y[1:10]
+```
+
+
+# Part 5 - Customer Prediction
+
+## Setup
+
+```{python}
+from sklearn.preprocessing import StandardScaler
+from sklearn import preprocessing, model_selection, metrics, feature_selection
+from sklearn.model_selection import GridSearchCV, learning_curve, train_test_split
+from sklearn.svm import SVC
+from sklearn.metrics import confusion_matrix
+from sklearn import neighbors, linear_model, svm, tree, ensemble
+```
+
+## Train/Test
+
+```{python}
+X = r.X
+Y = r.Y
+```
+
+```{python}
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, train_size = 0.8, random_state = 123)
+```
+
+```{python}
+X_train
+```
+
+```{python}
+Y_train
+```
+
+
+
+## SVM Classifier
+
+```{python}
+svm_grid = GridSearchCV(
+    estimator  = SVC(random_state=123, kernel='rbf'),
+    param_grid = [{'C':np.logspace(-2, 2, 10)}],
+    cv         = 5
+)
+
+svm_grid
+```
+
+```{python}
+svm_fit = svm_grid.fit(X=X_train, y=Y_train)
+```
+
+
+```{python}
+predictions_svm = svm_fit.predict(X_test)
+predictions_svm
+```
+
+```{python}
+metrics.accuracy_score(Y_test, predictions_svm)
+```
+
+
+
+
+## Logistic Regression
+
+```{python}
+logistic_reg_grid = GridSearchCV(
+    estimator  = linear_model.LogisticRegression(max_iter=4000),
+    param_grid = [{'C':np.logspace(-2,2,20)}],
+    cv         = 5
+)
+
+logistic_reg_grid
+```
+
+```{python}
+logistic_reg_fit = logistic_reg_grid.fit(X=X_train, y=Y_train)
+```
+
+
+```{python}
+predictions_logistic_reg = logistic_reg_fit.predict(X_test)
+predictions_logistic_reg 
+```
+
+
+```{python}
+metrics.accuracy_score(Y_test, predictions_logistic_reg)
+```
+
