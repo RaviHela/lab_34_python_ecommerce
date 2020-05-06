@@ -12,7 +12,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-    echo = TRUE,
+    echo    = TRUE,
     message = FALSE,
     warning = FALSE
 )
@@ -867,7 +867,11 @@ source_python("py/logistic_reg.py")
 ```
 
 ```{r}
-lr_predict(X)
+X[1,]
+```
+
+```{r}
+matrix(X[1,], nrow = 1) %>% lr_predict()
 ```
 
 
@@ -892,12 +896,12 @@ recipe_spec_customer_prediction %>% write_rds("preprocessing/recipe_spec_custome
 
 ## Cluster Morphology 
 
-```{r}
+```{r, eval=F}
 cluster_morphology_tbl %>% write_rds("preprocessing/cluster_morphology_tbl.rds")
 ```
 
 
-```{r}
+```{r, eval=F}
 cluster_morphology_ggplot %>% write_rds("preprocessing/cluster_morphology_ggplot.rds")
 ```
 
