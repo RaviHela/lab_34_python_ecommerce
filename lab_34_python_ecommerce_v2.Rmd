@@ -1,8 +1,8 @@
 ---
-title: "Visualizing HR Employee Clusters"
+title: "Advanced Customer Segmentation"
 subtitle: "Using R + Python"
 author: "Business Science"
-date: "4/15/2020"
+date: "May 6th, 2020"
 output: 
    html_document:
        theme: flatly
@@ -42,6 +42,9 @@ library(plotly)
 library(ggwordcloud)
 library(ggiraphExtra)
 
+# Preprocessing
+library(recipes)
+
 # Core
 library(tidyverse)
 library(tidyquant)
@@ -74,7 +77,7 @@ use_condaenv("py3.8", required = TRUE)
 
 ```{r}
 ecommerce_raw_tbl <- read_csv("data/ecommerce_data.csv")
-ecommerce_raw_tbl
+ecommerce_raw_tbl %>% glimpse()
 ```
 
 ## Format the Transactions Data
@@ -250,6 +253,7 @@ product_dictionary_raw_tbl <- products_filtered_tbl %>%
 
 product_dictionary_raw_tbl
 ```
+
 #### Term Frequency
 
 - Count Frequency
@@ -333,8 +337,6 @@ products_joined_tbl
 ### Prepare for Modeling
 
 ```{r, paged.print = FALSE}
-library(recipes)
-
 recipe_spec_products <- recipe(~ ., data = products_joined_tbl) %>%
     step_rm(StockCode, n, mode_description) %>%
     step_log(median_unit_price, offset = 1) %>%
@@ -703,8 +705,6 @@ cluster_morphology_tbl
 ```
 
 
-
-
 ```{r}
 cluster_morphology_ggplot <- cluster_morphology_tbl %>%
     select(cluster, count, sum, cat_0, cat_1, cat_2, cat_3, cat_4, cat_NA) %>%
@@ -778,6 +778,11 @@ Y = r.Y
 X_train, X_test, Y_train, Y_test = train_test_split(X, Y, train_size = 0.8, random_state = 123)
 ```
 
+```{python}
+X_train.shape
+```
+
+
 ## SVM Classifier
 
 ```{python}
@@ -835,7 +840,7 @@ metrics.accuracy_score(Y_test, predictions_logistic_reg)
 ```
 
 
-# Save Model & Preprocessing
+# Save Model 
 
 
 ## Model 
@@ -856,7 +861,6 @@ lr_model
 ```
 
 ```{python}
-
 metrics.accuracy_score(Y_test, lr_model.predict(X_test))
 ```
 
@@ -867,13 +871,14 @@ source_python("py/logistic_reg.py")
 ```
 
 ```{r}
-X[1,]
+X[2:5,]
 ```
 
 ```{r}
-matrix(X[1,], nrow = 1) %>% lr_predict()
+X[1:5,] %>% lr_predict()
 ```
 
+# Save Preprocessing
 
 ## Product Clusters
 
