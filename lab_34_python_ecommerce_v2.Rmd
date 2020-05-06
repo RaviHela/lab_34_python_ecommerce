@@ -18,6 +18,15 @@ knitr::opts_chunk$set(
 )
 ```
 
+# References
+
+This tutorial is based on the [Python Customer Segmentation Tutorial](https://www.kaggle.com/fabiendaniel/customer-segmentation/notebook) by F. Daniel. 
+
+A few changes:
+1. Implement order history into prediction (use invoice counts)
+2. Use `R` for data wrangling, preprocessing, and visualization
+3. Keep `Python` for the Machine Learning and Clustering
+
 # Libraries
 
 ```{r}
@@ -428,7 +437,7 @@ product_clusters_tbl
 
 ### Product Cluster Map
 
-```{r}
+```{r, eval=FALSE}
 g <- product_clusters_tbl %>%
     mutate(mode_description = str_remove_all(mode_description, "[^A-Za-z0-9 -]")) %>%
     mutate(tooltip = str_glue("Desc: {mode_description}
@@ -470,6 +479,8 @@ term_freq_by_cluster_tbl <- product_clusters_tbl %>%
     summarise(n = sum(n)) %>%
     arrange(desc(n), .by_group = TRUE) %>%
     slice(1:50) 
+
+term_freq_by_cluster_tbl
 ```
 
 ### Plotly
@@ -695,7 +706,7 @@ cluster_morphology_tbl
 
 
 ```{r}
-cluster_morphology_tbl %>%
+cluster_morphology_ggplot <- cluster_morphology_tbl %>%
     select(cluster, count, sum, cat_0, cat_1, cat_2, cat_3, cat_4, cat_NA) %>%
     ggRadar(aes(color = cluster), size = 1) +
     facet_wrap(~ cluster) +
@@ -710,16 +721,20 @@ cluster_morphology_tbl %>%
         text = element_text(color = "white"), 
         axis.text = element_text(color = "grey80")
     ) 
+
+cluster_morphology_ggplot
 ```
 
 ## Prepare for Machine Learning
 
 ```{r, paged.print = FALSE}
-recipe_spec_customer_prediction <- recipe(cluster ~ ., customer_clusters_tbl) %>%
-    step_rm(CustomerID, V1, V2, count, min, max, sum, FirstPurchase, LastPurchase) %>%
+data <- customer_clusters_tbl %>%
+    select(cluster, count, mean, contains("cat"))
+
+recipe_spec_customer_prediction <- recipe(cluster ~ ., data = data) %>%
     step_log(mean) %>%
     step_range(mean) %>%
-    step_mutate(cluster = as.integer(as.character(cluster))) %>%
+    step_mutate(cluster = as.integer(as.character(cluster)), skip = TRUE) %>%
     prep()
 
 recipe_spec_customer_prediction %>% juice()
@@ -746,12 +761,10 @@ Y[1:10]
 ## Setup
 
 ```{python}
-from sklearn.preprocessing import StandardScaler
-from sklearn import preprocessing, model_selection, metrics, feature_selection
-from sklearn.model_selection import GridSearchCV, learning_curve, train_test_split
+from sklearn import model_selection, metrics
+from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.svm import SVC
-from sklearn.metrics import confusion_matrix
-from sklearn import neighbors, linear_model, svm, tree, ensemble
+from sklearn import linear_model
 ```
 
 ## Train/Test
@@ -813,7 +826,7 @@ logistic_reg_fit = logistic_reg_grid.fit(X=X_train, y=Y_train)
 
 ```{python}
 predictions_logistic_reg = logistic_reg_fit.predict(X_test)
-predictions_logistic_reg 
+predictions_logistic_reg[1:10]
 ```
 
 
@@ -824,11 +837,16 @@ metrics.accuracy_score(Y_test, predictions_logistic_reg)
 
 # Save Model & Preprocessing
 
+
+## Model 
+
 ```{python}
 import joblib
+```
 
-file_path = "models/logistic_reg.sav"
-joblib.dump(logistic_reg_fit, file_path)
+
+```{python, eval = FALSE}
+joblib.dump(logistic_reg_fit, "models/logistic_reg.sav")
 ```
 
 
@@ -838,6 +856,48 @@ lr_model
 ```
 
 ```{python}
-lr_model.predict(X_test)
+
+metrics.accuracy_score(Y_test, lr_model.predict(X_test))
+```
+
+## BONUS: Sourcing Python from R (Needed for Shiny)
+
+```{r}
+source_python("py/logistic_reg.py")
+```
+
+```{r}
+lr_predict(X)
+```
+
+
+## Product Clusters
+
+```{r, eval=F}
+product_clusters_tbl %>% write_rds("preprocessing/product_clusters_tbl.rds")
+```
+
+
+## Customer History
+
+```{r, eval=F}
+customer_habits_joined_tbl %>% write_rds("preprocessing/customer_habits_joined_tbl.rds")
+```
+
+## Preprocessing Recipe
+
+```{r, eval=F}
+recipe_spec_customer_prediction %>% write_rds("preprocessing/recipe_spec_customer_prediction.rds")
+```
+
+## Cluster Morphology 
+
+```{r}
+cluster_morphology_tbl %>% write_rds("preprocessing/cluster_morphology_tbl.rds")
+```
+
+
+```{r}
+cluster_morphology_ggplot %>% write_rds("preprocessing/cluster_morphology_ggplot.rds")
 ```
 
