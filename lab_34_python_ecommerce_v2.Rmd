@@ -346,7 +346,7 @@ X[1:10, 1:10]
 
 
 
-# Part 2 - Product Modeling (Python)
+# Part 2 - Product Segmentation (Python)
 
 ```{python}
 import numpy as np
@@ -507,12 +507,10 @@ term_freq_by_cluster_tbl %>%
 ```
 
 
-# Part 3 - Customer Segmentation (R)
+# Part 3 - Customer Features (R)
 
 
-## Feature Engineering  
-
-### Join Product Categories 
+## Join Product Categories 
 
 ```{r}
 transaction_product_clusters_tbl <- ecommerce_tbl %>%
@@ -530,7 +528,7 @@ transaction_product_clusters_tbl <- ecommerce_tbl %>%
 transaction_product_clusters_tbl
 ```
 
-### Characterize Spend Habits
+## Characterize Spend Habits
 
 ```{r}
 customer_spend_habits_tbl <- transaction_product_clusters_tbl %>%
@@ -554,7 +552,7 @@ customer_spend_habits_tbl <- transaction_product_clusters_tbl %>%
 customer_spend_habits_tbl
 ```
 
-### Characterize Product Categories
+## Characterize Product Categories
 
 ```{r}
 customer_product_habits_tbl <- transaction_product_clusters_tbl %>%
@@ -572,7 +570,7 @@ customer_product_habits_tbl <- transaction_product_clusters_tbl %>%
 customer_product_habits_tbl
 ```
 
-### Characterize Recency in Purchases
+## Characterize Recency in Purchases
 
 ```{r}
 max_date <- max(as_date(transaction_product_clusters_tbl$InvoiceDate))
@@ -589,7 +587,7 @@ customer_recency_habits_tbl <- transaction_product_clusters_tbl %>%
 customer_recency_habits_tbl
 ```
 
-### Join Customer Habits
+## Join Customer Habits
 
 ```{r}
 customer_habits_joined_tbl <- customer_spend_habits_tbl %>%
@@ -601,7 +599,7 @@ customer_habits_joined_tbl
 
 
 
-### Prepare for Modeling
+## Prepare for Modeling
 
 ```{r, paged.print = FALSE}
 recipe_spec_customers <- recipe(~ ., data = customer_habits_joined_tbl) %>%
@@ -627,7 +625,7 @@ rownames(X) <- customer_id
 X[1:10, ]
 ```
 
-# Part 4 - Customer Modeling (Python)
+# Part 4 - Customer Segmentation (Python)
 
 ```{python}
 import numpy as np
@@ -692,6 +690,8 @@ cluster_morphology_tbl <- customer_clusters_tbl %>%
 
 cluster_morphology_tbl
 ```
+
+
 
 
 ```{r}
@@ -819,5 +819,25 @@ predictions_logistic_reg
 
 ```{python}
 metrics.accuracy_score(Y_test, predictions_logistic_reg)
+```
+
+
+# Save Model & Preprocessing
+
+```{python}
+import joblib
+
+file_path = "models/logistic_reg.sav"
+joblib.dump(logistic_reg_fit, file_path)
+```
+
+
+```{python}
+lr_model = joblib.load("models/logistic_reg.sav")
+lr_model
+```
+
+```{python}
+lr_model.predict(X_test)
 ```
 
